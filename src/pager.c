@@ -155,6 +155,14 @@ int pager_allocate_page(Pager *pager) {
         return -1;
     }
 
+    // 2) 初始化新页为 0（确保内容一致）
+    unsigned char zero[PAGE_SIZE];
+    memset(zero, 0, PAGE_SIZE);
+    if (pager_write_page(pager, new_pgno, zero) != 0) {
+        fprintf(stderr, "init new page failed\n");
+        return -1;
+    }
+
     DBHeader h;
     if (read_header(pager->fd, &h) != 0) return -1;
 

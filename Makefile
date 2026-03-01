@@ -1,7 +1,7 @@
 CC = clang
 CFLAGS = -Wall -Wextra -g
 
-SRC = src/main.c src/pager.c
+SRC = src/main.c src/pager.c src/wal.c
 OUT = mini_db
 
 all:
