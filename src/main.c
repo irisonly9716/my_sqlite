@@ -3,6 +3,13 @@
 #include "pager.h"
 #include "wal.h"
 
+static int db_read_page(Pager *pager, WAL *wal, uint32_t pgno, void *out_buf) {
+    int hit = wal_read_latest_page(wal, pgno, out_buf);
+    if (hit < 0) return -1;
+    if (hit == 1) return 0;
+    return pager_read_page(pager, pgno, out_buf);
+}
+
 int main(void) {
     Pager pager;
     WAL wal;
@@ -16,44 +23,46 @@ int main(void) {
         return 1;
     }
 
-    // on startup: recover from WAL
+    // 启动时先恢复（Day5）
     if (wal_recover(&wal, &pager) != 0) {
-        printf("wal recovery failed\n");
+        printf("wal recover failed\n");
         return 1;
     }
 
     printf("opened, pages=%u\n", pager.num_pages);
 
-    // make sure page1 exists
+    // 确保 page1 存在
     if (pager.num_pages < 2) {
-        pager_allocate_page(&pager);
+        int pg = pager_allocate_page(&pager);
+        printf("allocated page %d\n", pg);
     }
 
-    // write "hello" into page1 via WAL (not directly)
+    // 1) 先读一次 page1（此时应该来自data file）
+    unsigned char out[PAGE_SIZE];
+    memset(out, 0, PAGE_SIZE);
+    if (db_read_page(&pager, &wal, 1, out) != 0) {
+        printf("read failed\n");
+        return 1;
+    }
+    printf("before write, page1: %s\n", out);
+
+    // 2) 写入 WAL（不立即写data file）
     unsigned char buf[PAGE_SIZE];
     memset(buf, 0, PAGE_SIZE);
-    strcpy((char*)buf, "hello via WAL");
+    strcpy((char*)buf, "hello from WAL (same run)");
 
     if (wal_append_page(&wal, 1, buf) != 0) {
         printf("wal append failed\n");
         return 1;
     }
 
-    // read page1: prefer WAL latest
-    unsigned char out[PAGE_SIZE];
-    int hit = wal_read_latest_page(&wal, 1, out);
-    if (hit < 0) {
-        printf("wal read failed\n");
+    // 3) 立刻再读 page1（此时必须命中WAL，读到新内容）
+    memset(out, 0, PAGE_SIZE);
+    if (db_read_page(&pager, &wal, 1, out) != 0) {
+        printf("read failed\n");
         return 1;
     }
-    if (hit == 0) {
-        if (pager_read_page(&pager, 1, out) != 0) {
-            printf("pager read failed\n");
-            return 1;
-        }
-    }
-
-    printf("page1 says: %s\n", out);
+    printf("after write, page1: %s\n", out);
 
     wal_close(&wal);
     pager_close(&pager);
