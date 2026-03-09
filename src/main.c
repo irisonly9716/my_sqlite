@@ -25,36 +25,65 @@ int main(void) {
 
     printf("opened, pages=%u\n", pager.num_pages);
 
+    // 确保 page1 存在
     if (pager.num_pages < 2) {
         int pg = pager_allocate_page(&pager);
         printf("allocated page %d\n", pg);
     }
 
-    // 通过 pager cache 获取 page1
+    // 获取 page1
     Page *page = pager_get_page(&pager, &wal, 1);
     if (!page) {
         printf("get page failed\n");
         return 1;
     }
 
-    printf("before write, page1: %s\n", page->data);
+    // 初始化为 slotted page
+    slotted_page_init(page);
 
-    // 修改 page
-    strcpy((char *)page->data, "hello from WAL (same run)");
+    // 插入两条 record
+    int slot1 = slotted_page_insert(page, "alice", 5);
+    int slot2 = slotted_page_insert(page, "bob", 3);
 
-    // 先写 WAL，保证 durability
+    if (slot1 < 0 || slot2 < 0) {
+        printf("insert failed\n");
+        return 1;
+    }
+
+    printf("inserted slots: %d, %d\n", slot1, slot2);
+
+    // 读回 slot1
+    char buf[100];
+    uint16_t len = 0;
+
+    if (slotted_page_read(page, slot1, buf, &len) != 0) {
+        printf("read slot1 failed\n");
+        return 1;
+    }
+    buf[len] = '\0';
+    printf("slot %d = %s\n", slot1, buf);
+
+    // 读回 slot2
+    if (slotted_page_read(page, slot2, buf, &len) != 0) {
+        printf("read slot2 failed\n");
+        return 1;
+    }
+    buf[len] = '\0';
+    printf("slot %d = %s\n", slot2, buf);
+
+    // 修改后的整页写入 WAL
     if (wal_append_page(&wal, 1, page->data) != 0) {
         printf("wal append failed\n");
         return 1;
     }
 
-    // 标脏
+    // 标记 dirty
     if (pager_mark_dirty(page) != 0) {
         printf("mark dirty failed\n");
         return 1;
     }
 
-    printf("after write, page1: %s\n", page->data);
+    // checkpoint
     printf("doing checkpoint...\n");
     if (wal_checkpoint(&wal, &pager) != 0) {
         printf("checkpoint failed\n");
