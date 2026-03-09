@@ -2,13 +2,7 @@
 #include <string.h>
 #include "pager.h"
 #include "wal.h"
-
-static int db_read_page(Pager *pager, WAL *wal, uint32_t pgno, void *out_buf) {
-    int hit = wal_read_latest_page(wal, pgno, out_buf);
-    if (hit < 0) return -1;
-    if (hit == 1) return 0;
-    return pager_read_page(pager, pgno, out_buf);
-}
+#include "page_layout.h"
 
 int main(void) {
     Pager pager;
@@ -23,7 +17,7 @@ int main(void) {
         return 1;
     }
 
-    // 启动时先恢复（Day5）
+    // 启动恢复
     if (wal_recover(&wal, &pager) != 0) {
         printf("wal recover failed\n");
         return 1;
@@ -31,38 +25,42 @@ int main(void) {
 
     printf("opened, pages=%u\n", pager.num_pages);
 
-    // 确保 page1 存在
     if (pager.num_pages < 2) {
         int pg = pager_allocate_page(&pager);
         printf("allocated page %d\n", pg);
     }
 
-    // 1) 先读一次 page1（此时应该来自data file）
-    unsigned char out[PAGE_SIZE];
-    memset(out, 0, PAGE_SIZE);
-    if (db_read_page(&pager, &wal, 1, out) != 0) {
-        printf("read failed\n");
+    // 通过 pager cache 获取 page1
+    Page *page = pager_get_page(&pager, &wal, 1);
+    if (!page) {
+        printf("get page failed\n");
         return 1;
     }
-    printf("before write, page1: %s\n", out);
 
-    // 2) 写入 WAL（不立即写data file）
-    unsigned char buf[PAGE_SIZE];
-    memset(buf, 0, PAGE_SIZE);
-    strcpy((char*)buf, "hello from WAL (same run)");
+    printf("before write, page1: %s\n", page->data);
 
-    if (wal_append_page(&wal, 1, buf) != 0) {
+    // 修改 page
+    strcpy((char *)page->data, "hello from WAL (same run)");
+
+    // 先写 WAL，保证 durability
+    if (wal_append_page(&wal, 1, page->data) != 0) {
         printf("wal append failed\n");
         return 1;
     }
 
-    // 3) 立刻再读 page1（此时必须命中WAL，读到新内容）
-    memset(out, 0, PAGE_SIZE);
-    if (db_read_page(&pager, &wal, 1, out) != 0) {
-        printf("read failed\n");
+    // 标脏
+    if (pager_mark_dirty(page) != 0) {
+        printf("mark dirty failed\n");
         return 1;
     }
-    printf("after write, page1: %s\n", out);
+
+    printf("after write, page1: %s\n", page->data);
+    printf("doing checkpoint...\n");
+    if (wal_checkpoint(&wal, &pager) != 0) {
+        printf("checkpoint failed\n");
+        return 1;
+    }
+    printf("checkpoint done\n");
 
     wal_close(&wal);
     pager_close(&pager);

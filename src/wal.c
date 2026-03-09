@@ -122,3 +122,41 @@ int wal_recover(WAL *wal, Pager *pager) {
     if (fsync(wal->fd) != 0) return -1;
     return 0;
 }
+
+int wal_checkpoint(WAL *wal, Pager *pager) {
+    if (!wal || wal->fd < 0 || !pager) return -1;
+
+    struct stat st;
+    if (fstat(wal->fd, &st) != 0) return -1;
+
+    if (st.st_size == 0) return 0;  // nothing to checkpoint
+
+    if (lseek(wal->fd, 0, SEEK_SET) < 0) return -1;
+
+    off_t pos = 0;
+
+    while (pos + (off_t)sizeof(uint32_t) + (off_t)PAGE_SIZE <= st.st_size) {
+        uint32_t pg;
+        unsigned char buf[PAGE_SIZE];
+
+        if (read_all(wal->fd, &pg, sizeof(pg)) != 0) return -1;
+        if (read_all(wal->fd, buf, PAGE_SIZE) != 0) return -1;
+
+        while (pager->num_pages <= pg) {
+            if (pager_allocate_page(pager) < 0) return -1;
+        }
+
+        if (pager_write_page(pager, pg, buf) != 0) return -1;
+
+        pos += (off_t)sizeof(uint32_t) + (off_t)PAGE_SIZE;
+    }
+
+    // 确保 data file 已持久化
+    if (fsync(pager->fd) != 0) return -1;
+
+    // 清空 WAL
+    if (ftruncate(wal->fd, 0) != 0) return -1;
+    if (fsync(wal->fd) != 0) return -1;
+
+    return 0;
+}
