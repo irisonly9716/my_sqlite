@@ -30,6 +30,8 @@ static int read_all(int fd, void *buf, size_t n) {
 int wal_open(WAL *wal, const char *wal_filename) {
     memset(wal, 0, sizeof(*wal));
     wal->fd = open(wal_filename, O_RDWR | O_CREAT, 0644);
+    wal->wal_appends = 0;
+    wal->wal_replays = 0;
     if (wal->fd < 0) {
         perror("open wal");
         return -1;
@@ -55,6 +57,7 @@ int wal_append_page(WAL *wal, uint32_t page_num, const void *page_data) {
 
     // ensure durability of the log
     if (fsync(wal->fd) != 0) return -1;
+    wal->wal_appends ++; // 记录append次数
     return 0;
 }
 
@@ -120,6 +123,8 @@ int wal_recover(WAL *wal, Pager *pager) {
     // truncate WAL after successful replay
     if (ftruncate(wal->fd, 0) != 0) return -1;
     if (fsync(wal->fd) != 0) return -1;
+
+    wal->wal_replays++; // 记录replay次数
     return 0;
 }
 

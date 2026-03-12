@@ -162,11 +162,15 @@ Page *pager_get_page(Pager *pager, WAL *wal, uint32_t pgno) {
     // 1. 先查 cache
     Page *page = pager_lookup_page(pager, pgno);
     if (page) {
+        // 新增：如果命中chche 了 就把这个page移动到LRU头部 因为它是最新被访问的了
+        // 并且记录名命中次数
+        pager->cache_hits++;
         lru_move_to_head(pager, page);
         return page;
     }
 
     // 2. cache miss，满了就淘汰
+    pager->cache_misses++; // 记录cache miss次数
     if (pager->cache_count >= pager->max_cache_pages) {
         if (pager_evict(pager) != 0) {
             return NULL;
@@ -259,6 +263,10 @@ int pager_open(Pager *pager, const char *filename) {
         return -1;
     }
     pager->fd = fd;
+    pager->cache_hits = 0;
+    pager->cache_misses = 0;
+    pager->disk_reads = 0;
+    pager->disk_writes = 0;
 
     struct stat st;
     if (fstat(fd, &st) != 0) {
@@ -287,7 +295,11 @@ int pager_open(Pager *pager, const char *filename) {
             return -1;
         }
 
-        pager->num_pages = 1;
+        pager->num_pages = 1;   
+        pager->lru_head = NULL;
+        pager->lru_tail = NULL;
+        pager->cache_count = 0;
+        pager->max_cache_pages = MAX_CACHE_PAGES;
         return 0;
     }
 
@@ -377,6 +389,7 @@ int pager_read_page(Pager *pager, uint32_t page_num, void *buffer) {
         return -1;
     }
 
+    pager->disk_reads++; // 记录磁盘读次数
     return 0;
 }
 
@@ -402,6 +415,7 @@ int pager_write_page(Pager *pager, uint32_t page_num, void *buffer) {
         perror("fsync");
         return -1;
     }
+    pager->disk_writes++; // 记录磁盘写次数
 
     return 0;
 }

@@ -40,6 +40,14 @@ typedef struct {
 
     int cache_count;	// cache内的size
     int max_cache_pages;	// 允许的最大size 要是超过 必须pop链表尾部节点
+
+    // benchmark metrics
+    uint64_t cache_hits;
+    uint64_t cache_misses;
+    uint64_t disk_reads;
+    uint64_t disk_writes;
+
+
 } Pager;
 
 int pager_open(Pager *pager, const char *filename);

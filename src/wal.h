@@ -4,6 +4,8 @@
 
 typedef struct WAL {
     int fd;
+    uint64_t wal_appends;
+    uint64_t wal_replays;
 } WAL;
 
 

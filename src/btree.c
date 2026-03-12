@@ -52,8 +52,10 @@ static int decode_record(
     memcpy(&vlen, buf + pos, sizeof(uint16_t));
     pos += sizeof(uint16_t);
 
-    memcpy(value, buf + pos, vlen);
-    value[vlen] = '\0';
+    if (value != NULL) {          // ← 加这个检查
+        memcpy(value, buf + pos, vlen);
+        value[vlen] = '\0';
+    }
 
     return 0;
 }
@@ -628,8 +630,10 @@ int btree_insert(BTree *tree, const char *key, const char *value) {
 
         // ✅ child leaf 满了，用 split_child_leaf 分裂并插回 root
         return btree_split_child_leaf(tree, child_pgno, key, value);
+    }
 
-    return -1;}
+    return -1;
+
 }
 
 // 实现搜索接口，优化成在 leaf page 中搜索 key，找到就把 value 写入 out_value，设置 out_len，并返回 0；找不到返回 -1
