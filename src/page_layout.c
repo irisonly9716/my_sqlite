@@ -13,11 +13,16 @@ static Slot *get_slot(Page *page, uint16_t index) {
 }
 
 // ------------------------初始化slotted page-------------------------------
+// 初始化优化成leaf page，新建一个page时默认是leaf page，后续我们会在分裂成internal page时修改它的node_type
+// 新增了leftmost_child和next_leaf字段，先初始化成0； next_leaf字段在我们实现scan range时会用到，先初始化成0表示没有右兄弟了
 void slotted_page_init(Page *page) {
     PageHeader *header = get_header(page);
+    header->node_type = NODE_LEAF;
     header->slot_count = 0;
     header->free_start = sizeof(PageHeader);
     header->free_end = PAGE_SIZE;
+    header->leftmost_child = 0;
+    header->next_leaf = 0;
 }
 
 // 插入record
