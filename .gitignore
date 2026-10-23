@@ -1,0 +1,12 @@
+# Build output
+mini_db
+mini_bench
+*.dSYM/
+*.o
+
+# Database files created by tests and benchmarks
+*.db
+*.wal
+
+# macOS
+.DS_Store
